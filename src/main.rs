@@ -24,6 +24,69 @@ const COLOR_DARK_GROUND: Color = Color {
     b: 150,
 };
 
+type Map = Vec<Vec<Tile>>;
+
+// basic game Object
+#[derive(Debug)]
+struct Object {
+    x: i32,
+    y: i32,
+    char: char,
+    color: Color,
+}
+
+impl Object {
+    // new creates gaem Object
+    pub fn new(x: i32, y: i32, char: char, color: Color) -> Self {
+        Object {
+            x: x,
+            y: y,
+            char: char,
+            color: color,
+        }
+    }
+
+    // move by dx and dy
+    pub fn move_by(&mut self, dx: i32, dy: i32, map: &Map) {
+        if !map[(self.x + dx) as usize][(self.y + dy) as usize].blocked {
+            self.x += dx;
+            self.y += dy;
+        }
+    }
+
+    // set color and draw character
+    pub fn draw(&self, con: &mut Console) {
+        con.set_default_foreground(self.color);
+        con.put_char(self.x, self.y, self.char, BackgroundFlag::None);
+    }
+
+    // erase character
+    pub fn clear(&self, con: &mut Console) {
+        con.put_char(self.x, self.y, ' ', BackgroundFlag::None);
+    }
+}
+// tile
+#[derive(Clone, Copy, Debug)]
+struct Tile {
+    blocked: bool,
+    block_sight: bool,
+}
+
+impl Tile {
+    pub fn empty() -> Self {
+        Tile {
+            blocked: false,
+            block_sight: false,
+        }
+    }
+    pub fn wall() -> Self {
+        Tile {
+            blocked: true,
+            block_sight: true,
+        }
+    }
+}
+// rect
 #[derive(Clone,Copy,Debug)]
 struct Rect {
     x1: i32,
@@ -65,30 +128,6 @@ fn create_v_tunnel(y1: i32, y2: i32, x: i32, map: &mut Map) {
     }
 }
 
-// tile
-#[derive(Clone, Copy, Debug)]
-struct Tile {
-    blocked: bool,
-    block_sight: bool,
-}
-
-impl Tile {
-    pub fn empty() -> Self {
-        Tile {
-            blocked: false,
-            block_sight: false,
-        }
-    }
-    pub fn wall() -> Self {
-        Tile {
-            blocked: true,
-            block_sight: true,
-        }
-    }
-}
-
-type Map = Vec<Vec<Tile>>;
-
 fn make_map() -> Map {
     let mut map = vec![vec![Tile::wall(); MAP_HEIGHT as usize]; MAP_WIDTH as usize];
 
@@ -102,44 +141,48 @@ fn make_map() -> Map {
     map
 }
 
-// basic game Object
-#[derive(Debug)]
-struct Object {
-    x: i32,
-    y: i32,
-    char: char,
-    color: Color,
+fn render_all(root: &mut Root, con: &mut Offscreen, objects: &[Object], map: &Map) {
+    // draw all objects in the list
+    for object in objects {
+        object.draw(con);
+    }
+    for y in 0..MAP_HEIGHT {
+        for x in 0..MAP_WIDTH {
+            let wall = map[x as usize][y as usize].block_sight;
+            if wall {
+                con.set_char_background(x, y, COLOR_DARK_WALL, BackgroundFlag::Set)
+            } else {
+                con.set_char_background(x, y, COLOR_DARK_GROUND, BackgroundFlag::Set)
+            }
+        }
+    }
+    // blit the contents of "con" to the root console and present it
+    blit(con, (0, 0), (MAP_WIDTH, MAP_HEIGHT), root, (0, 0), 1.0, 1.0);
 }
+// Input handling
+fn handle_keys(root: &mut Root, player: &mut Object, map: &Map) -> bool {
+    use tcod::input::Key;
+    use tcod::input::KeyCode::*;
 
-impl Object {
-    // new creates gaem Object
-    pub fn new(x: i32, y: i32, char: char, color: Color) -> Self {
-        Object {
-            x: x,
-            y: y,
-            char: char,
-            color: color,
+    let key = root.wait_for_keypress(true);
+    match key {
+        Key { code: Enter, alt: true, .. } => {
+            // Alt+Enter: toggle fullscreen
+            let fullscreen = root.is_fullscreen();
+            root.set_fullscreen(!fullscreen);
         }
+        Key { code: Escape, .. } => return true,  // exit game
+
+        // movement keys
+        Key { code: Up, .. } => player.move_by(0, -1, map),
+        Key { code: Down, .. } => player.move_by(0, 1, map),
+        Key { code: Left, .. } => player.move_by(-1, 0, map),
+        Key { code: Right, .. } => player.move_by(1, 0, map),
+
+        _ => {}
     }
 
-    // move by dx and dy
-    pub fn move_by(&mut self, dx: i32, dy: i32, map: &Map) {
-        if !map[(self.x + dx) as usize][(self.y + dy) as usize].blocked {
-            self.x += dx;
-            self.y += dy;
-        }
-    }
-
-    // set color and draw character
-    pub fn draw(&self, con: &mut Console) {
-        con.set_default_foreground(self.color);
-        con.put_char(self.x, self.y, self.char, BackgroundFlag::None);
-    }
-
-    // erase character
-    pub fn clear(&self, con: &mut Console) {
-        con.put_char(self.x, self.y, ' ', BackgroundFlag::None);
-    }
+    false
 }
 
 // main loop
@@ -190,48 +233,4 @@ fn main() {
             break;
         }
     }
-}
-
-fn render_all(root: &mut Root, con: &mut Offscreen, objects: &[Object], map: &Map) {
-    // draw all objects in the list
-    for object in objects {
-        object.draw(con);
-    }
-    for y in 0..MAP_HEIGHT {
-        for x in 0..MAP_WIDTH {
-            let wall = map[x as usize][y as usize].block_sight;
-            if wall {
-                con.set_char_background(x, y, COLOR_DARK_WALL, BackgroundFlag::Set)
-            } else {
-                con.set_char_background(x, y, COLOR_DARK_GROUND, BackgroundFlag::Set)
-            }
-        }
-    }
-    // blit the contents of "con" to the root console and present it
-    blit(con, (0, 0), (MAP_WIDTH, MAP_HEIGHT), root, (0, 0), 1.0, 1.0);
-}
-// Input handling
-fn handle_keys(root: &mut Root, player: &mut Object, map: &Map) -> bool {
-    use tcod::input::Key;
-    use tcod::input::KeyCode::*;
-
-    let key = root.wait_for_keypress(true);
-    match key {
-        Key { code: Enter, alt: true, .. } => {
-            // Alt+Enter: toggle fullscreen
-            let fullscreen = root.is_fullscreen();
-            root.set_fullscreen(!fullscreen);
-        }
-        Key { code: Escape, .. } => return true,  // exit game
-
-        // movement keys
-        Key { code: Up, .. } => player.move_by(0, -1, map),
-        Key { code: Down, .. } => player.move_by(0, 1, map),
-        Key { code: Left, .. } => player.move_by(-1, 0, map),
-        Key { code: Right, .. } => player.move_by(1, 0, map),
-
-        _ => {}
-    }
-
-    false
 }
